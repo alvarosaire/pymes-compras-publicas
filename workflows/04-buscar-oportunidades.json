@@ -1,0 +1,168 @@
+{
+  "id": "pymesRadar04",
+  "name": "PYMES - FASE 1 - Buscar con perfil guardado",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "nodes": [
+    {
+      "id": "fase1",
+      "name": "FASE 1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        40
+      ],
+      "parameters": {
+        "content": "## FASE 1",
+        "width": 1200,
+        "height": 370,
+        "color": 5
+      }
+    },
+    {
+      "parameters": {
+        "formTitle": "Buscar oportunidades para tu empresa",
+        "formDescription": "Ingresa el RUC de un perfil registrado en fase 0. La búsqueda usa sus productos y regiones. No modifica el perfil.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "RUC",
+              "placeholder": "Ingresa 11 dígitos",
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {
+          "buttonLabel": "Buscar oportunidades"
+        }
+      },
+      "id": "ruc-radar",
+      "name": "RUC del perfil guardado",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        200
+      ],
+      "webhookId": "pymes-buscar-oportunidades"
+    },
+    {
+      "id": "normalizar-ruc-radar",
+      "name": "Preparar RUC",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        200
+      ],
+      "parameters": {
+        "jsCode": "return [{json:{ruc:String($json.RUC??'').trim()}}];"
+      }
+    },
+    {
+      "id": "buscar-convocatorias",
+      "name": "Buscar oportunidades SEACE",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        200
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "http://pymes-sunat:8000/oportunidades",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 90000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "explicar-radar",
+      "name": "Mostrar coincidencias y enlaces",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        200
+      ],
+      "parameters": {
+        "jsCode": "const d=$json;\nconst esc=s=>String(s??'No informado').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]));\nconst link=(url,label)=>'<a href=\"'+esc(url)+'\" target=\"_blank\" rel=\"noopener noreferrer\">'+esc(label)+'</a>';\nlet titulo,mensaje;\nif(['BUSQUEDA_COMPLETA','BUSQUEDA_PARCIAL'].includes(d.resultado)){\n const rows=d.oportunidades??[];\n titulo=rows.length?'Oportunidades para revisar':'Sin coincidencias en esta búsqueda';\n mensaje='Empresa: '+esc(d.razonSocial)+'<br>RUC: '+esc(d.ruc)+'<br>Consulta de la fuente: '+esc(d.fechaConsultaFuente)+'<br>Palabras utilizadas: '+esc((d.terminos??[]).join(', '))+'<br><br>';\n if(!rows.length)mensaje+='No encontramos coincidencias con estos productos, regiones y plazos en el módulo consultado. Esto no significa que no existan otras convocatorias. Revisa el perfil o el buscador oficial.<br>';\n for(const o of rows){\n  mensaje+='<hr><strong>'+esc(o.nomenclatura)+'</strong><br>'+esc(o.descripcion)+'<br>Entidad: '+esc(o.entidad)+'<br>Región de los ítems: '+esc((o.regionItems??[]).join(', ')||'Por verificar')+'<br>'+esc(o.motivo)+'<br>Inscripción hasta: '+esc(o.inscripcionHasta)+'<br>'+esc(o.estadoPlazo)+'<br>Presentación de ofertas: '+esc(o.presentacionOferta)+'<br>Monto publicado: '+esc(o.monto)+' '+esc(o.moneda)+'<br>'+link(o.url,'Ver ficha oficial');\n  for(const b of (o.bases??[]))mensaje+=' · '+link(b.url,'Abrir bases');\n  mensaje+='<br>';\n }\n for(const a of d.advertencias??[])mensaje+='<br>'+esc(a);\n mensaje+='<br><br>Se muestran hasta 10 oportunidades. Coincidencia inicial por palabras, no evaluación de aptitud ni probabilidad de ganar. Confirma requisitos y cronograma en la ficha oficial. Las bases están enlazadas; su contenido todavía no se analiza.<br>'+link(d.fuente,'Buscador oficial SEACE');\n}else if(d.resultado==='PERFIL_NO_ENCONTRADO'){\n titulo='Primero registra el perfil';mensaje='No hay un perfil guardado para este RUC. Completa la fase 0 antes de buscar convocatorias.';\n}else if(d.resultado==='PERFIL_SIN_TERMINOS'){\n titulo='Describe mejor tus productos';mensaje='Indica productos o servicios concretos en el perfil. Por ejemplo: muebles, colchones o mantenimiento de equipos.';\n}else if(d.resultado==='FORMATO_INVALIDO'){\n titulo='Revisa el RUC';mensaje='Escribe exactamente 11 dígitos.';\n}else{\n titulo='No se pudo completar la búsqueda';mensaje='El servicio local o la fuente oficial no respondieron correctamente. Esto no significa que no existan oportunidades. Puedes volver a intentar la fase 1.';\n}\nreturn [{json:{...d,titulo,mensaje}}];"
+      }
+    },
+    {
+      "parameters": {
+        "operation": "completion",
+        "completionTitle": "={{ $json.titulo }}",
+        "completionMessage": "={{ $json.mensaje }}",
+        "options": {}
+      },
+      "id": "resultado-ruc",
+      "name": "Mostrar resultado",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 1,
+      "position": [
+        960,
+        200
+      ],
+      "webhookId": "f8350e02-2359-4ede-b2f3-b9cfddd8a3f4"
+    }
+  ],
+  "connections": {
+    "RUC del perfil guardado": {
+      "main": [
+        [
+          {
+            "node": "Preparar RUC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar RUC": {
+      "main": [
+        [
+          {
+            "node": "Buscar oportunidades SEACE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar oportunidades SEACE": {
+      "main": [
+        [
+          {
+            "node": "Mostrar coincidencias y enlaces",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mostrar coincidencias y enlaces": {
+      "main": [
+        [
+          {
+            "node": "Mostrar resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

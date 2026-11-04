@@ -1,0 +1,276 @@
+{
+  "id": "pymesGemini02",
+  "name": "PYMES - FASE 2 - Analizar con Gemini",
+  "active": false,
+  "nodes": [
+    {
+      "id": "FASE 2",
+      "name": "FASE 2",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "parameters": {
+        "content": "## FASE 2",
+        "width": 2250,
+        "height": 480,
+        "color": 5
+      },
+      "position": [
+        -80,
+        0
+      ]
+    },
+    {
+      "id": "Analizar expediente",
+      "name": "Analizar expediente",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "parameters": {
+        "formTitle": "FASE 2 · Analizar requisitos con Gemini",
+        "formDescription": "Se enviarán a Google las bases y documentos del expediente. Usa solo documentos públicos o autorizados; el nivel gratuito puede utilizar el contenido para mejorar sus productos. Una consulta por envío, sin reintentos automáticos. Recibirás un borrador con referencias que debes revisar.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "RUC",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Folio",
+              "requiredField": true,
+              "placeholder": "Folio de la carga de documentos en FASE 2"
+            },
+            {
+              "fieldLabel": "Autorización",
+              "requiredField": true,
+              "placeholder": "Escribe AUTORIZO para enviar el expediente a Gemini"
+            }
+          ]
+        },
+        "options": {
+          "buttonLabel": "Analizar documentos"
+        }
+      },
+      "position": [
+        0,
+        240
+      ],
+      "webhookId": "pymes-analizar-gemini"
+    },
+    {
+      "id": "Preparar expediente",
+      "name": "Preparar expediente",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "parameters": {
+        "method": "POST",
+        "url": "http://pymes-sunat:8000/analisis/preparar",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ruc:String($json.RUC??'').trim(),expediente:String($json.Folio??'').trim().toLowerCase(),autorizacion:String($json['Autorización']??'').trim()}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "position": [
+        300,
+        240
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "¿Expediente listo?",
+      "name": "¿Expediente listo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ready",
+              "leftValue": "={{ $json.resultado === 'ANALISIS_PREPARADO' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "position": [
+        600,
+        240
+      ]
+    },
+    {
+      "id": "Gemini - analizar requisitos",
+      "name": "Gemini - analizar requisitos",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.peticion) }}",
+        "options": {
+          "timeout": 180000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "position": [
+        900,
+        240
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "Validar y guardar análisis",
+      "name": "Validar y guardar análisis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "parameters": {
+        "method": "POST",
+        "url": "http://pymes-sunat:8000/analisis/guardar",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ruc:$('Preparar expediente').first().json.contexto.ruc,expediente:$('Preparar expediente').first().json.contexto.expediente,analisis:$('Preparar expediente').first().json.contexto.id,respuesta:$json}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "position": [
+        1200,
+        240
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "Presentar resultado",
+      "name": "Presentar resultado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const d=$json;const esc=s=>String(s??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]));\nlet titulo='Análisis no completado',mensaje=esc(d.mensaje||'Revisa la credencial de Gemini, la cuota gratuita y la disponibilidad del servicio. No se confirmó una evaluación.');\nif(d.resultado==='ANALISIS_GUARDADO'){\n titulo='Borrador de análisis de requisitos';mensaje='Expediente: '+esc(d.expediente)+'<br>Análisis: '+esc(d.id)+'<br>Modelo: '+esc(d.modelo)+'<br><br>'+esc(d.resumen)+'<br><br>Lectura declarada por IA: '+(d.alcanceCompleto?'completa de los adjuntos':'parcial; revisa las limitaciones');\n for(const r of d.requisitos??[]){mensaje+='<hr><strong>'+esc(r.estado)+' · '+esc(r.requisito)+'</strong><br>'+esc(r.explicacion)+'<br>Falta o acción: '+esc(r.faltante)+esc(r.nota);\n for(const e of r.evidencias??[])mensaje+='<br>Referencia propuesta: '+esc(e.nombre)+' · '+(e.pagina?'página '+esc(e.pagina):'sin paginación')+'<br>«'+esc(e.fragmento)+'»';}\n mensaje+='<hr><strong>Limitaciones:</strong><br>'+(d.limitaciones??[]).map(esc).join('<br>');\n}\nreturn [{json:{titulo,mensaje}}];"
+      },
+      "position": [
+        1500,
+        240
+      ]
+    },
+    {
+      "id": "Mostrar evaluación",
+      "name": "Mostrar evaluación",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 1,
+      "parameters": {
+        "operation": "completion",
+        "completionTitle": "={{ $json.titulo }}",
+        "completionMessage": "={{ $json.mensaje }}",
+        "options": {}
+      },
+      "position": [
+        1850,
+        240
+      ],
+      "webhookId": "pymes-evaluacion-gemini"
+    }
+  ],
+  "connections": {
+    "Analizar expediente": {
+      "main": [
+        [
+          {
+            "node": "Preparar expediente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar expediente": {
+      "main": [
+        [
+          {
+            "node": "¿Expediente listo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Expediente listo?": {
+      "main": [
+        [
+          {
+            "node": "Gemini - analizar requisitos",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Presentar resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini - analizar requisitos": {
+      "main": [
+        [
+          {
+            "node": "Validar y guardar análisis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar y guardar análisis": {
+      "main": [
+        [
+          {
+            "node": "Presentar resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Presentar resultado": {
+      "main": [
+        [
+          {
+            "node": "Mostrar evaluación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveManualExecutions": false,
+    "executionTimeout": 240
+  },
+  "pinData": {}
+}

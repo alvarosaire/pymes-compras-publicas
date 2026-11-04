@@ -1,0 +1,220 @@
+{
+  "name": "PYMES 02 - Consultar RUC en padrón SUNAT",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Consulta del padrón oficial SUNAT\n1. Pulsa Execute y envía un RUC.\n2. Verás razón social, estado, condición y fecha del padrón.\n\nConsulta una copia local del padrón oficial; no es tiempo real.\nNO_ENCONTRADO no demuestra que la empresa no exista. Un fallo de conexión se informa por separado.\n\nNo verifica RNP, representación legal ni aptitud para contratar. No necesita Clave SOL ni IA.\nActualizar el padrón con el procedimiento incluido.",
+        "height": 340,
+        "width": 600
+      },
+      "id": "nota-inicio",
+      "name": "Cómo probarlo",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        300,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "formTitle": "Registro inicial de empresa",
+        "formDescription": "Consulta del padrón público de SUNAT. Mostramos la fecha de los datos; no es una consulta en tiempo real.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "RUC",
+              "fieldType": "text",
+              "placeholder": "Ingresa 11 dígitos",
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {
+          "buttonLabel": "Revisar RUC"
+        }
+      },
+      "id": "formulario-ruc",
+      "name": "Formulario de empresa",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        450
+      ],
+      "webhookId": "pymes-consulta-padron-sunat"
+    },
+    {
+      "parameters": {
+        "jsCode": "const ruc = String($json.RUC ?? '').trim();\nreturn [{json:{ruc,formatoValido:/^[0-9]{11}$/.test(ruc),resultado:'FORMATO_INVALIDO'}}];"
+      },
+      "id": "formato-ruc",
+      "name": "Revisar formato del RUC",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        450
+      ]
+    },
+    {
+      "id": "formato-valido",
+      "name": "¿Tiene 11 dígitos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        480,
+        450
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "validar",
+              "leftValue": "={{ $json.formatoValido }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "consulta-padron",
+      "name": "Consultar padrón SUNAT local",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        740,
+        340
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
+      "parameters": {
+        "url": "={{ 'http://pymes-sunat:8000/ruc/' + encodeURIComponent($json.ruc) }}",
+        "options": {
+          "timeout": 10000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "interpretar-consulta",
+      "name": "Explicar resultado y fuente",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        450
+      ],
+      "parameters": {
+        "jsCode": "const d=$json;\nconst ruc=d.ruc ?? $('Revisar formato del RUC').first().json.ruc;\nconst escape=s=>String(s??'No disponible').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]));\nlet titulo, mensaje;\nif(d.resultado==='FORMATO_INVALIDO'){\n titulo='Revisa el RUC';\n mensaje='Escribe exactamente 11 dígitos, sin letras ni guiones. No se consultó el padrón.';\n}else if(d.resultado==='ENCONTRADO'){\n titulo='RUC encontrado en el padrón';\n mensaje='RUC: '+escape(ruc)+'<br>Razón social: '+escape(d.razonSocial)+'<br>Estado: '+escape(d.estado)+'<br>Condición: '+escape(d.condicion)+'<br>Ubigeo: '+escape(d.ubigeo);\n}else if(d.resultado==='NO_ENCONTRADO'){\n titulo='RUC no encontrado en esta copia';\n mensaje='El RUC '+escape(ruc)+' no aparece en el padrón consultado. Revisa el número y confirma en SUNAT; esto no demuestra que la empresa no exista.';\n}else{\n titulo='No se pudo consultar el padrón';\n mensaje='La fuente local no está disponible o la consulta falló. Intenta nuevamente cuando el servicio y la carga del padrón estén listos. No se ha determinado si el RUC existe.';\n}\nif(['ENCONTRADO','NO_ENCONTRADO'].includes(d.resultado)){\n mensaje+='<br><br>Fecha del padrón: '+escape(d.fechaPadron)+'<br>Consulta: '+escape(d.fechaConsulta)+'<br>Fuente: padrón reducido de SUNAT. Datos de una copia, no en tiempo real.<br>Esta consulta no verifica el RNP ni determina si puedes participar en una contratación.';\n}\nreturn [{json:{...d,ruc,resultado:d.resultado??'ERROR_CONSULTA',titulo,mensaje}}];"
+      }
+    },
+    {
+      "parameters": {
+        "operation": "completion",
+        "completionTitle": "={{ $json.titulo }}",
+        "completionMessage": "={{ $json.mensaje }}",
+        "options": {}
+      },
+      "id": "resultado-ruc",
+      "name": "Mostrar resultado",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        450
+      ]
+    }
+  ],
+  "connections": {
+    "Formulario de empresa": {
+      "main": [
+        [
+          {
+            "node": "Revisar formato del RUC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Revisar formato del RUC": {
+      "main": [
+        [
+          {
+            "node": "¿Tiene 11 dígitos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Tiene 11 dígitos?": {
+      "main": [
+        [
+          {
+            "node": "Consultar padrón SUNAT local",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Explicar resultado y fuente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar padrón SUNAT local": {
+      "main": [
+        [
+          {
+            "node": "Explicar resultado y fuente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Explicar resultado y fuente": {
+      "main": [
+        [
+          {
+            "node": "Mostrar resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {},
+  "tags": [],
+  "id": "pymesSunatRuc02"
+}

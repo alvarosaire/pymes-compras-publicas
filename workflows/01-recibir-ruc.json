@@ -1,0 +1,107 @@
+{
+  "name": "PYMES 01 - Recibir RUC y revisar formato",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Primer flujo local\n1. Pulsa Execute Workflow y abre el formulario de prueba.\n2. Escribe un RUC y envíalo.\n3. Revisa la respuesta.\n\n**No consulta SUNAT todavía.** Solo comprueba 11 dígitos. No necesita IA ni credenciales.\n\nSiguiente etapa: conectar una consulta al padrón oficial y mostrar fuente y fecha.",
+        "height": 340,
+        "width": 470
+      },
+      "id": "nota-inicio",
+      "name": "Cómo probarlo",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        220,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "formTitle": "Registro inicial de empresa",
+        "formDescription": "Prueba local: recibimos tu RUC y revisamos su formato. La consulta oficial de SUNAT todavía no está conectada.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "RUC",
+              "fieldType": "text",
+              "placeholder": "Ingresa 11 dígitos",
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {
+          "buttonLabel": "Revisar RUC"
+        }
+      },
+      "id": "formulario-ruc",
+      "name": "Formulario de empresa",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [
+        250,
+        470
+      ],
+      "webhookId": "pymes-registro-inicial"
+    },
+    {
+      "parameters": {
+        "jsCode": "const ruc = String($json.RUC ?? '').trim();\nconst valido = /^\\d{11}$/.test(ruc);\nreturn [{json: {\n ruc,\n formatoValido: valido,\n titulo: valido ? 'RUC recibido — verificación oficial pendiente' : 'Revisa el número de RUC',\n mensaje: valido\n ? 'El número tiene 11 dígitos. Este flujo inicial todavía no consulta SUNAT. No se ha comprobado existencia, razón social, estado ni condición. El siguiente paso es conectar el padrón oficial o una API de consulta.'\n : 'Ingresa un RUC de 11 dígitos, sin letras, espacios internos ni guiones. Esta revisión de formato no acredita que la empresa exista.',\n fuente: null,\n fechaPadron: null,\n verificacionOficial: 'PENDIENTE'\n}}];"
+      },
+      "id": "formato-ruc",
+      "name": "Revisar formato del RUC",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        470
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "completion",
+        "completionTitle": "={{ $json.titulo }}",
+        "completionMessage": "={{ $json.mensaje }}",
+        "options": {}
+      },
+      "id": "resultado-ruc",
+      "name": "Mostrar resultado",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 1,
+      "position": [
+        870,
+        470
+      ]
+    }
+  ],
+  "connections": {
+    "Formulario de empresa": {
+      "main": [
+        [
+          {
+            "node": "Revisar formato del RUC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Revisar formato del RUC": {
+      "main": [
+        [
+          {
+            "node": "Mostrar resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {},
+  "tags": []
+}
