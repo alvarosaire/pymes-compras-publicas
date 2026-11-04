@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+*.sqlite*
+.n8n/
+data/
+backups/
+credentials*.json
+node_modules/
+__pycache__/
+*.pyc
+*.pdf
+*.docx
+*.zip
+expedientes/
